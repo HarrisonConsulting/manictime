@@ -1,0 +1,8 @@
+requests
+requests_ntlm
+dataclasses
+
+requests>=2.25.0
+requests-ntlm>=1.1.0
+python-dotenv>=0.15.0
+backoff>=1.10.0
