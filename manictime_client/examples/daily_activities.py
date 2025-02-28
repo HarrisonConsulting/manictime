@@ -11,6 +11,7 @@ import logging
 
 # Import the ManicTime client library
 from manictime import ManicTimeClient, Config
+from manictime.exceptions import AuthenticationError, ManicTimeClientError, NotFoundError
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, 

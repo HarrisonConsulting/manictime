@@ -14,6 +14,7 @@ import os
 
 # Import the ManicTime client library
 from manictime import ManicTimeClient, Config
+from manictime.exceptions import AuthenticationError, ManicTimeClientError, NotFoundError
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, 
@@ -58,20 +59,48 @@ def main():
     
     # Create configuration from environment variables
     config = Config.from_env()
+    
+    # Check if we have necessary authentication configuration
+    if not config.server_url:
+        print("ERROR: MANICTIME_SERVER_URL environment variable is not set.")
+        print("Please set up your .env file with the required configuration.")
+        print("See examples/README.md for details on environment setup.")
+        return
+        
+    # Check authentication method
+    if config.auth_type == 'bearer' and not config.token:
+        print(f"Warning: Using bearer authentication but token is not set.")
+        if config.username and config.password:
+            print(f"Using username/password instead: {config.username}")
+        else:
+            print("ERROR: Authentication credentials not found in environment variables.")
+            print("Please set MANICTIME_TOKEN or MANICTIME_USERNAME/MANICTIME_PASSWORD in your .env file.")
+            return
+    
     print(f"Connecting to: {config.server_url}")
+    print(f"Authentication type: {config.auth_type or 'default'}")
     
-    # Initialize client
-    client = ManicTimeClient(config)
-    
-    # Get activities for the last N days
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=args.days)
-    
-    print(f"\nFetching daily activities from {start_date.date()} to {end_date.date()}...")
-    print(f"This will export {args.days} days of data.")
-    
-    daily_data = client.get_daily_activities(start_date, end_date)
-    print(f"Retrieved data for {len(daily_data)} days.")
+    try:
+        # Initialize client
+        client = ManicTimeClient(config)
+        
+        # Get activities for the last N days
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=args.days)
+        
+        print(f"\nFetching daily activities from {start_date.date()} to {end_date.date()}...")
+        print(f"This will export {args.days} days of data.")
+        
+        daily_data = client.get_daily_activities(start_date, end_date)
+        print(f"Retrieved data for {len(daily_data)} days.")
+    except AuthenticationError as e:
+        print(f"\nERROR: Authentication failed - {str(e)}")
+        print("Please check your authentication credentials in the .env file.")
+        print("Make sure your token is valid or username/password are correct.")
+        return
+    except Exception as e:
+        print(f"\nERROR: {str(e)}")
+        return
     
     if not daily_data:
         print("No data found for the specified date range.")
