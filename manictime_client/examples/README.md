@@ -89,8 +89,16 @@ Command line options:
 
 ## Environment Setup
 
-All examples load configuration from environment variables. Before running, make sure you have a `.env` file in the project root with your ManicTime server settings:
+All examples load configuration from environment variables. Before running, you **must** create a `.env` file in the manictime_client directory with your ManicTime server settings.
 
+### Creating Your .env File
+
+1. Copy the template file:
+```bash
+cp .env.template .env
+```
+
+2. Edit the `.env` file with your actual credentials:
 ```
 MANICTIME_SERVER_URL=http://your-manictime-server
 MANICTIME_AUTH_TYPE=bearer  # or ntlm
@@ -100,3 +108,50 @@ MANICTIME_TOKEN=your-access-token  # for bearer auth
 # MANICTIME_PASSWORD=your-password
 # MANICTIME_DOMAIN=your-domain  # for NTLM auth
 ```
+
+### Authentication Methods
+
+Choose one of these authentication methods:
+
+**Bearer Token Authentication**:
+```
+MANICTIME_AUTH_TYPE=bearer
+MANICTIME_TOKEN=your-access-token
+```
+
+**Username/Password Authentication**:
+```
+MANICTIME_AUTH_TYPE=bearer
+MANICTIME_USERNAME=your-username
+MANICTIME_PASSWORD=your-password
+```
+
+**NTLM Authentication** (Windows Authentication):
+```
+MANICTIME_AUTH_TYPE=ntlm
+MANICTIME_USERNAME=your-username
+MANICTIME_PASSWORD=your-password
+MANICTIME_DOMAIN=your-domain  # if applicable
+```
+
+### Testing Your Configuration
+
+To test if your authentication is working correctly:
+
+```bash
+# From the manictime_client directory
+python -c "from manictime import ManicTimeClient, Config; client = ManicTimeClient(Config.from_env()); print(client.get_timelines())"
+```
+
+If this returns a list of timelines, your authentication is working properly.
+
+### Obtaining an Access Token
+
+If you need to get a bearer token:
+
+1. Use the C# client's login command:
+```
+mtapi auth login --server-url <server URL> --username <username> --password <password>
+```
+
+2. Or follow the documentation for your ManicTime server's authentication endpoints

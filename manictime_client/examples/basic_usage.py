@@ -26,15 +26,43 @@ def main():
     
     # Create configuration from environment variables
     config = Config.from_env()
+    
+    # Check if we have necessary authentication configuration
+    if not config.server_url:
+        print("ERROR: MANICTIME_SERVER_URL environment variable is not set.")
+        print("Please set up your .env file with the required configuration.")
+        print("See examples/README.md for details on environment setup.")
+        return
+        
+    # Check authentication method
+    if config.auth_type == 'bearer' and not config.token:
+        print(f"Warning: Using bearer authentication but token is not set.")
+        if config.username and config.password:
+            print(f"Using username/password instead: {config.username}")
+        else:
+            print("ERROR: Authentication credentials not found in environment variables.")
+            print("Please set MANICTIME_TOKEN or MANICTIME_USERNAME/MANICTIME_PASSWORD in your .env file.")
+            return
+    
     print(f"Connecting to: {config.server_url}")
+    print(f"Authentication type: {config.auth_type or 'default'}")
     
-    # Initialize client
-    client = ManicTimeClient(config)
-    
-    # Get all timelines
-    print("\nFetching timelines...")
-    timelines = client.get_timelines()
-    print(f"Found {len(timelines)} timelines:")
+    try:
+        # Initialize client
+        client = ManicTimeClient(config)
+        
+        # Get all timelines
+        print("\nFetching timelines...")
+        timelines = client.get_timelines()
+        print(f"Found {len(timelines)} timelines:")
+    except AuthenticationError as e:
+        print(f"\nERROR: Authentication failed - {str(e)}")
+        print("Please check your authentication credentials in the .env file.")
+        print("Make sure your token is valid or username/password are correct.")
+        return
+    except Exception as e:
+        print(f"\nERROR: {str(e)}")
+        return
     
     for i, timeline in enumerate(timelines, 1):
         print(f"  {i}. {timeline.get('name', 'Unknown')} (ID: {timeline.get('timelineId', 'Unknown')})")
