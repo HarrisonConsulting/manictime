@@ -19,7 +19,11 @@ Some examples have additional requirements that are noted in their documentation
 Demonstrates how to connect to the ManicTime API and retrieve basic timeline data.
 
 ```bash
+# From the manictime_client directory
 python examples/basic_usage.py
+
+# Or as a module
+python -m examples.basic_usage
 ```
 
 ### 2. Daily Activities (`daily_activities.py`)
@@ -27,7 +31,11 @@ python examples/basic_usage.py
 Shows how to retrieve and analyze activity data organized by day.
 
 ```bash
+# From the manictime_client directory
 python examples/daily_activities.py
+
+# Or as a module
+python -m examples.daily_activities
 ```
 
 ### 3. Data Visualization (`data_visualization.py`)
@@ -43,11 +51,16 @@ Requirements:
 # Install dependencies
 pip install pandas matplotlib seaborn
 
+# From the manictime_client directory
 # Run with default settings (30 days)
 python examples/data_visualization.py
 
 # Run with custom days
 python examples/data_visualization.py 14  # analyze last 14 days
+
+# Or as a module
+python -m examples.data_visualization
+python -m examples.data_visualization 14
 ```
 
 Output will be saved to a `manictime_visualizations` directory.
@@ -57,11 +70,16 @@ Output will be saved to a `manictime_visualizations` directory.
 Exports ManicTime data to CSV or JSON files for further analysis in other tools.
 
 ```bash
+# From the manictime_client directory
 # Export last 30 days to CSV
 python examples/export_to_csv.py
 
 # Export with custom options
 python examples/export_to_csv.py --days 14 --output my_data --format both
+
+# Or as a module
+python -m examples.export_to_csv
+python -m examples.export_to_csv --days 14 --output my_data --format both
 ```
 
 Command line options:
