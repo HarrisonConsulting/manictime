@@ -1,0 +1,32 @@
+version: '3'
+services:
+  # Development container
+  manictime-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ..:/workspace:cached
+    environment:
+      - PYTHONPATH=/workspace
+      - MANICTIME_SERVER_URL=http://manictime-server:8080
+      - MANICTIME_USERNAME=admin
+      - MANICTIME_PASSWORD=admin123
+    depends_on:
+      - manictime-server
+    command: sleep infinity
+
+  # ManicTime server for testing
+  manictime-server:
+    image: manictime/server:latest
+    ports:
+      - "8080:8080"
+    environment:
+      - MANICTIME_ADMIN_USERNAME=admin
+      - MANICTIME_ADMIN_PASSWORD=admin123
+      - MANICTIME_ALLOW_ANONYMOUS=false
+    volumes:
+      - manictime-data:/var/manictime
+
+volumes:
+  manictime-data:

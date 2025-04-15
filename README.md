@@ -1,57 +1,106 @@
-# ManicTime API Client
+# ManicTime API Python Client
 
-ManicTime API client enables querying ManicTime servers using command line. It supports cloud or on-premises servers. It also serves as a sample app for using [ManicTime Cloud API](https://docs.manictime.com/server/api/cloud-authentication).
+A robust Python wrapper for the ManicTime API that can be used for data analytics projects and applications that integrate with ManicTime time tracking software.
 
-## Download
+## Installation
 
-You can [download](https://github.com/manictime/manictime-api-client/releases/latest) the latest version of ManicTime API Client for Windows, macOS and Linux.
+```bash
+pip install manictime
+```
 
-## Usage
+## Features
 
-### Display help
+- Comprehensive wrapper for ManicTime API
+- Multiple authentication methods (NTLM, Bearer token)
+- Robust error handling and retries
+- Structured data models
+- Helper methods for analytics use cases
+- Configurable caching
 
-    mtapi -?
+## Quick Start
 
-### Display help for command
+```python
+from manictime import ManicTimeClient, Config
+from datetime import datetime, timedelta
 
-    mtapi auth login -?
+# Configure the client
+config = Config(
+    server_url="https://your-manictime-server.com",
+    auth_type="bearer",
+    token="your-access-token"
+)
 
-### Login to to get access token
+# Initialize the client
+client = ManicTimeClient(config)
 
-Cloud (default callback URL http://127.0.0.1:4040)
+# Get all timelines
+timelines = client.get_timelines()
 
-    mtapi auth login --client-id <client ID> --client-secret <client secret>
+# Get activities for a date range
+start_date = datetime.now() - timedelta(days=7)
+end_date = datetime.now()
+activities = client.get_activities_for_date_range(
+    timeline_id="your-timeline-id",
+    start_date=start_date,
+    end_date=end_date
+)
 
-Cloud (custom callback URL)
+# Get daily activities across all timelines
+daily_data = client.get_daily_activities(start_date, end_date)
+```
 
-    mtapi auth login --client-id <client ID> --client-secret <client secret> --callback-url <callback URL>
+## Authentication Options
 
-Server with ManicTime users
+### Bearer Token Authentication
 
-    mtapi auth login --server-url <server URL> --username <username> --password <password>
+```python
+config = Config(
+    server_url="https://api.manictime.com",
+    auth_type="bearer",
+    token="your-access-token"
+)
+```
 
-Server with ManicTime users (interactive password)
+### Username/Password Authentication
 
-    mtapi auth login --server-url <server URL> --username <username>
+```python
+config = Config(
+    server_url="https://your-manictime-server.com",
+    auth_type="bearer",
+    username="your-username",
+    password="your-password"
+)
+```
 
-### Use API
+### Windows Authentication (NTLM)
 
-Cloud
+```python
+config = Config(
+    server_url="https://your-manictime-server.com",
+    auth_type="ntlm",
+    username="your-username",
+    password="your-password",
+    domain="your-domain"  # Optional
+)
+```
 
-    mtapi get timelines --access-token <access token> 
+## Data Analytics Examples
 
-Server with ManicTime users
-    
-    mtapi get timelines --server-url <server URL> --access-token <access token>     
+See the [`examples`](./manictime/examples/) directory for usage scenarios:
 
-Server with Windows users (as current user)
+- Basic usage examples
+- Daily activity reporting
+- Data visualization with Matplotlib
+- Exporting data to CSV
 
-    mtapi get timelines --server-url <server URL>
+## Documentation
 
-Server with Windows users (as different user)
+For more information on ManicTime API, see the [official documentation](https://docs.manictime.com/server/api/cloud-authentication).
 
-    mtapi get timelines --server-url <server URL> --username <username> --password <password>
+## Contributing
 
-Server with Windows users (as different user, interactive password)
+Contributions are welcome! Please see our contributing guidelines.
 
-    mtapi get timelines --server-url <server URL> --username <username>
+## License
+
+[MIT License](LICENSE)

@@ -1,0 +1,23 @@
+{
+  "name": "ManicTime Development",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "manictime-dev",
+  "workspaceFolder": "/workspace",
+  "settings": {
+    "python.defaultInterpreterPath": "/usr/local/bin/python",
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": true,
+    "python.testing.pytestEnabled": true,
+    "editor.formatOnSave": true
+  },
+  "extensions": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "njpwerner.autodocstring",
+    "matangover.mypy",
+    "ryanluker.vscode-coverage-gutters"
+  ],
+  "forwardPorts": [8080],
+  "postCreateCommand": "bash ./.devcontainer/scripts/post-create.sh",
+  "remoteUser": "vscode"
+}
