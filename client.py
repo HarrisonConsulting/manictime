@@ -57,36 +57,15 @@ class ManicTimeClient:
     def _get_token(self):
         """Get authentication token using username/password following OAuth 2.0 Resource Owner Password Flow"""
         try:
-            # Step 1: Get token endpoint URL by making an unauthenticated request to API
-            api_url = f"{self.config.server_url}/api"
-            logger.debug(f"Fetching token endpoint from {api_url}")
-            
-            headers = {
-                "Accept": "application/vnd.manictime.v3+json"
-            }
-            
-            response = self.session.request(
-                "get",
-                api_url,
-                headers=headers,
-                timeout=self.config.timeout
-            )
-            
-            # We expect a 401 response with the token endpoint in the JSON body
-            if response.status_code == 401 and response.headers.get('Content-Type', '').startswith('application/'):
-                token_endpoint_info = response.json()
-                token_url = None
+            if self.config.auth_type == 'bearer':
+                # Bypass token endpoint discovery and use direct URL
+                # Clear session cookies to ensure a clean request
+                self.session.cookies.clear()
+                logger.debug(f"Session cookies cleared before token request")
                 
-                # Look for the token endpoint in the links
-                for link in token_endpoint_info.get('links', []):
-                    if link.get('rel') == 'manictime/token':
-                        token_url = link.get('href')
-                        break
-                        
-                if not token_url:
-                    raise AuthenticationError("Could not find token endpoint URL in API response")
-                    
-                logger.debug(f"Found token endpoint URL: {token_url}")
+                # Use the direct token endpoint URL
+                token_url = f"{self.config.server_url}/api/token"
+                logger.debug(f"Using direct token endpoint: {token_url}")
                 
                 # Step 2: Get access token from token endpoint
                 headers = {
@@ -94,6 +73,7 @@ class ManicTimeClient:
                     "Accept": "application/vnd.manictime.v3+json"
                 }
                 
+                # Use form-urlencoded format with proper URL encoding
                 data = {
                     "grant_type": "password",
                     "username": self.config.username,
@@ -104,36 +84,88 @@ class ManicTimeClient:
                     "post",
                     token_url,
                     headers=headers,
-                    data=data,
+                    data=data,  # requests will handle URL encoding automatically
                     timeout=self.config.timeout
                 )
                 
-                token_response.raise_for_status()
-                token_data = token_response.json()
+                logger.debug(f"Token request response status: {token_response.status_code}")
                 
+                # Even if we get a 200 OK, we need to verify the response contains a token
+                # First check if the response is valid JSON
+                try:
+                    token_data = token_response.json()
+                except Exception as e:
+                    logger.error(f"Failed to parse token response as JSON: {str(e)}")
+                    raise AuthenticationError(f"Invalid response format from server: {str(e)}")
+                
+                # Check if token_data is a dictionary
+                if not isinstance(token_data, dict):
+                    logger.error(f"Unexpected token response format: {type(token_data)}")
+                    raise AuthenticationError(f"Unexpected token response format: {type(token_data)}")
+                
+                # Check if the token is in the response
                 if "token" not in token_data:
-                    raise AuthenticationError("Invalid token response from server")
+                    # Some servers might return 200 OK even for auth failures
+                    # with different response formats
+                    if "error" in token_data:
+                        error_msg = token_data.get("error_description", token_data["error"])
+                        raise AuthenticationError(f"Authentication error: {error_msg}")
+                    else:
+                        raise AuthenticationError("Invalid token response from server (token not found)")
                     
                 # Set authorization header for future API calls
                 self.session.headers['Authorization'] = f'Bearer {token_data["token"]}'
+                
+                # Return the token for storing in Odoo
+                self.token = token_data["token"]
+                
                 logger.debug("Successfully obtained authentication token")
+                
+            elif self.config.auth_type == 'ntlm':
+                # For NTLM, we already set up the session with HttpNtlmAuth,
+                # so nothing else to do here except verify it works
+                api_url = f"{self.config.server_url}/api"
+                logger.debug(f"Testing NTLM authentication to {api_url}")
+                
+                headers = {
+                    "Accept": "application/vnd.manictime.v3+json"
+                }
+                
+                response = self.session.request(
+                    "get",
+                    api_url,
+                    headers=headers,
+                    timeout=self.config.timeout
+                )
+                
+                response.raise_for_status()
+                logger.debug("NTLM authentication successful")
+                
             else:
-                # Server might not require authentication or returned unexpected response
-                raise AuthenticationError(f"Unexpected response from API: {response.status_code}")
+                raise AuthenticationError(f"Unsupported authentication type: {self.config.auth_type}")
                 
         except requests.exceptions.RequestException as e:
             raise AuthenticationError(f"Failed to obtain authentication token: {str(e)}")
         
     @backoff.on_exception(backoff.expo, requests.exceptions.RequestException, max_tries=3)
     def _make_request(self, url: str, method: str = 'get', 
-                     data: Any = None, params: Dict[str, Any] = None) -> Any:
+                     data: Any = None, params: Dict[str, Any] = None,
+                     headers: Dict[str, str] = None) -> Any:
         """Make HTTP request with retries and error handling"""
+        # Prepare headers - start with session headers
+        request_headers = dict(self.session.headers)
+        
+        # Add any custom headers
+        if headers:
+            request_headers.update(headers)
+            
         try:
             response = self.session.request(
                 method,
                 url,
                 json=data,
                 params=params,
+                headers=request_headers,
                 timeout=self.config.timeout
             )
             response.raise_for_status()
@@ -156,14 +188,56 @@ class ManicTimeClient:
         
     def get_activities(self, timeline_id: str, 
                       from_time: datetime, to_time: datetime, 
-                      cache: bool = True) -> Dict[str, Any]:
-        """Get activities for timeline in time range"""
-        url = f"{self.config.server_url}/api/timelines/{timeline_id}/activities"
+                      cache: bool = True, activities_url: str = None) -> Dict[str, Any]:
+        """Get activities for timeline in time range
+        
+        Args:
+            timeline_id: The timeline ID
+            from_time: Start time for the activity range
+            to_time: End time for the activity range
+            cache: Whether to use caching
+            activities_url: Optional direct URL to the activities endpoint
+            
+        Returns:
+            Response data from activities API
+        """
+        # Use the provided activities URL if available, otherwise construct it
+        if activities_url:
+            url = activities_url
+            logger.info(f"Using provided activities URL: {url}")
+        else:
+            url = f"{self.config.server_url}/api/timelines/{timeline_id}/activities"
+            logger.info(f"Using default constructed activities URL: {url}")
+            
+        # Format parameters for the request
         params = {
             'fromTime': from_time.isoformat(),
             'toTime': to_time.isoformat()
         }
-        return self._make_request(url, params=params)
+        
+        # Add v3 API header to ensure proper response format
+        headers = {"Accept": "application/vnd.manictime.v3+json"}
+        logger.info(f"Requesting activities for timeline {timeline_id} from {from_time} to {to_time}")
+        
+        try:
+            result = self._make_request(url, params=params, headers=headers)
+            
+            # Log response information to help with debugging
+            if isinstance(result, dict):
+                if 'activities' in result:
+                    activity_count = len(result['activities'])
+                    logger.info(f"Retrieved {activity_count} activities from response")
+                else:
+                    logger.warning(f"Response doesn't contain 'activities' key. Keys: {list(result.keys())}")
+            elif isinstance(result, list):
+                logger.info(f"Retrieved {len(result)} activities (direct list response)")
+            else:
+                logger.warning(f"Unexpected response type: {type(result)}")
+                
+            return result
+        except Exception as e:
+            logger.error(f"Error fetching activities for timeline {timeline_id}: {str(e)}")
+            raise
 
     def get_timelines(self) -> List[Dict[str, Any]]:
         """
@@ -174,20 +248,46 @@ class ManicTimeClient:
         logger.info(f"Retrieved {len(response)} timelines")
         return response
 
-    def get_tag_combinations(self) -> List[Dict[str, Any]]:
+    def get_tag_combinations(self, include_all_users: bool = False) -> List[Dict[str, Any]]:
         """
         Get list of tag combinations
+        
+        Args:
+            include_all_users: If True, fetch tags for all users (admin only)
+            
+        Returns:
+            List of tag combinations
         """
-        url = f"{self.config.server_url}/api/tags"
-        response = self._make_request(url, "GET")
-        logger.info(f"Retrieved {len(response)} tag combinations")
-        return response
+        if include_all_users:
+            # Admin endpoint to get tags for all users
+            url = f"{self.config.server_url}/api/tagcombinationlist?getAll=true"
+            logger.info("Fetching tag combinations for all users (admin endpoint)")
+        else:
+            # Standard endpoint for current user's tags
+            url = f"{self.config.server_url}/api/tagcombinationlist"
+            logger.info("Fetching tag combinations for current user")
+            
+        # Add appropriate accept header for v3 API
+        headers = {"Accept": "application/vnd.manictime.v3+json"}
+        
+        try:
+            response = self._make_request(url, "GET", headers=headers)
+            logger.info(f"Retrieved {len(response)} tag combinations")
+            return response
+        except ManicTimeClientError as e:
+            # If the admin endpoint fails, fall back to the standard endpoint
+            if include_all_users:
+                logger.warning(f"Admin tag endpoint failed: {str(e)}. Falling back to user endpoint.")
+                return self.get_tag_combinations(include_all_users=False)
+            # Re-raise the error for the standard endpoint
+            raise
 
     def get_activities_for_date_range(self, 
                                     timeline_id: str,
                                     start_date: datetime,
                                     end_date: datetime,
-                                    batch_size: timedelta = timedelta(days=7)) -> List[Activity]:
+                                    batch_size: timedelta = timedelta(days=7),
+                                    activities_url: str = None) -> List[Activity]:
         """
         Get all activities between two dates, handling pagination
         
@@ -196,6 +296,7 @@ class ManicTimeClient:
             start_date: Start date (inclusive)
             end_date: End date (inclusive) 
             batch_size: How much data to request at once (default 7 days)
+            activities_url: Optional direct URL to the activities endpoint
         
         Returns:
             List of Activity objects
@@ -211,10 +312,28 @@ class ManicTimeClient:
             batch = self.get_activities(
                 timeline_id,
                 current_start,
-                current_end
+                current_end,
+                activities_url=activities_url
             )
             
-            activities = [Activity.from_dict(a) for a in batch.get("activities", [])]
+            # Handle the case where batch might not be a dictionary
+            if not isinstance(batch, dict):
+                logger.warning(f"Unexpected format in activities response: {type(batch)}")
+                activities = []
+            else:
+                # Safely extract activities from the response
+                activity_data = batch.get("activities", [])
+                if not isinstance(activity_data, list):
+                    logger.warning(f"Activities field is not a list: {type(activity_data)}")
+                    activities = []
+                else:
+                    activities = []
+                    for a in activity_data:
+                        try:
+                            activities.append(Activity.from_dict(a))
+                        except Exception as e:
+                            logger.error(f"Failed to parse activity: {str(e)}")
+                            # Continue with other activities
             all_activities.extend(activities)
             
             logger.debug(f"Retrieved {len(activities)} activities")
@@ -911,65 +1030,45 @@ class AsyncManicTimeClient:
     async def _get_token(self):
         """Get authentication token using username/password following OAuth 2.0 Resource Owner Password Flow"""
         try:
-            # Step 1: Get token endpoint URL by making an unauthenticated request to API
-            api_url = f"{self.config.server_url}/api"
-            logger.debug(f"Fetching token endpoint from {api_url}")
+            # Bypass token endpoint discovery and use direct URL
+            # Clear existing cookies for a fresh request
+            self.session.cookie_jar.clear()
+            logger.debug(f"Session cookies cleared before token request")
             
-            headers = {
+            # Use the direct token endpoint URL
+            token_url = f"{self.config.server_url}/api/token"
+            logger.debug(f"Using direct token endpoint: {token_url}")
+            
+            # Step 2: Get access token from token endpoint
+            token_headers = {
+                "Content-Type": "application/x-www-form-urlencoded",
                 "Accept": "application/vnd.manictime.v3+json"
             }
             
-            async with self.session.get(
-                api_url,
-                headers=headers,
+            # Use form-urlencoded format with proper URL encoding
+            data = {
+                "grant_type": "password",
+                "username": self.config.username,
+                "password": self.config.password
+            }
+            
+            async with self.session.post(
+                token_url,
+                headers=token_headers,
+                data=data,  # aiohttp will handle URL encoding automatically
                 timeout=self.config.timeout
-            ) as response:
-                # We expect a 401 response with the token endpoint in the JSON body
-                if response.status == 401 and response.content_type.startswith('application/'):
-                    token_endpoint_info = await response.json()
-                    token_url = None
+            ) as token_response:
+                logger.debug(f"Token request response status: {token_response.status}")
+                
+                token_response.raise_for_status()
+                token_data = await token_response.json()
+                
+                if "token" not in token_data:
+                    raise AuthenticationError("Invalid token response from server")
                     
-                    # Look for the token endpoint in the links
-                    for link in token_endpoint_info.get('links', []):
-                        if link.get('rel') == 'manictime/token':
-                            token_url = link.get('href')
-                            break
-                            
-                    if not token_url:
-                        raise AuthenticationError("Could not find token endpoint URL in API response")
-                        
-                    logger.debug(f"Found token endpoint URL: {token_url}")
-                    
-                    # Step 2: Get access token from token endpoint
-                    token_headers = {
-                        "Content-Type": "application/x-www-form-urlencoded",
-                        "Accept": "application/vnd.manictime.v3+json"
-                    }
-                    
-                    data = {
-                        "grant_type": "password",
-                        "username": self.config.username,
-                        "password": self.config.password
-                    }
-                    
-                    async with self.session.post(
-                        token_url,
-                        headers=token_headers,
-                        data=data,
-                        timeout=self.config.timeout
-                    ) as token_response:
-                        token_response.raise_for_status()
-                        token_data = await token_response.json()
-                        
-                        if "token" not in token_data:
-                            raise AuthenticationError("Invalid token response from server")
-                            
-                        # Set authorization header for future API calls
-                        self.session.headers['Authorization'] = f'Bearer {token_data["token"]}'
-                        logger.debug("Successfully obtained authentication token")
-                else:
-                    # Server might not require authentication or returned unexpected response
-                    raise AuthenticationError(f"Unexpected response from API: {response.status}")
+                # Set authorization header for future API calls
+                self.session.headers['Authorization'] = f'Bearer {token_data["token"]}'
+                logger.debug("Successfully obtained authentication token")
                     
         except aiohttp.ClientError as e:
             raise AuthenticationError(f"Failed to obtain authentication token: {str(e)}")

@@ -63,9 +63,26 @@ class TagCombination:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "TagCombination":
         """Create TagCombination from API response dict"""
+        # Handle if data is not a dictionary
+        if not isinstance(data, dict):
+            logger.warning(f"TagCombination.from_dict received non-dict data: {type(data)}")
+            if isinstance(data, str):
+                # If it's a string, use it as the name with empty tags
+                return cls(name=data, tags=[])
+            return cls(name="Unknown", tags=[])
+        
+        # Extract tags and ensure it's a list
+        tags = data.get("tags", [])
+        if not isinstance(tags, list):
+            if tags:
+                # If tags is a string or other non-list, convert to single-item list
+                tags = [str(tags)]
+            else:
+                tags = []
+                
         return cls(
             name=data.get("name", ""),
-            tags=data.get("tags", []),
+            tags=tags,
             description=data.get("description"),
             color=data.get("color")
         )
