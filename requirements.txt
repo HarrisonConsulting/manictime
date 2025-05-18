@@ -1,6 +1,8 @@
 requests
 requests_ntlm
 dataclasses
+jsonschema
+pandas
 
 requests>=2.25.0
 requests-ntlm>=1.1.0
