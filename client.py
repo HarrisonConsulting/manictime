@@ -55,26 +55,72 @@ class ManicTimeClient:
                 raise AuthenticationError("Bearer auth requires token or username/password")
         
     def _get_token(self):
-        """Get authentication token using username/password"""
-        url = f"{self.config.server_url}/api/token"
+        """Get authentication token using username/password following OAuth 2.0 Resource Owner Password Flow"""
         try:
+            # Step 1: Get token endpoint URL by making an unauthenticated request to API
+            api_url = f"{self.config.server_url}/api"
+            logger.debug(f"Fetching token endpoint from {api_url}")
+            
+            headers = {
+                "Accept": "application/vnd.manictime.v3+json"
+            }
+            
             response = self.session.request(
-                "post",
-                url,
-                json={
-                    "username": self.config.username,
-                    "password": self.config.password
-                },
+                "get",
+                api_url,
+                headers=headers,
                 timeout=self.config.timeout
             )
-            response.raise_for_status()
-            token_data = response.json()
             
-            if "access_token" not in token_data:
-                raise AuthenticationError("Invalid token response from server")
+            # We expect a 401 response with the token endpoint in the JSON body
+            if response.status_code == 401 and response.headers.get('Content-Type', '').startswith('application/'):
+                token_endpoint_info = response.json()
+                token_url = None
                 
-            self.session.headers['Authorization'] = f'Bearer {token_data["access_token"]}'
-            logger.debug("Successfully obtained authentication token")
+                # Look for the token endpoint in the links
+                for link in token_endpoint_info.get('links', []):
+                    if link.get('rel') == 'manictime/token':
+                        token_url = link.get('href')
+                        break
+                        
+                if not token_url:
+                    raise AuthenticationError("Could not find token endpoint URL in API response")
+                    
+                logger.debug(f"Found token endpoint URL: {token_url}")
+                
+                # Step 2: Get access token from token endpoint
+                headers = {
+                    "Content-Type": "application/x-www-form-urlencoded",
+                    "Accept": "application/vnd.manictime.v3+json"
+                }
+                
+                data = {
+                    "grant_type": "password",
+                    "username": self.config.username,
+                    "password": self.config.password
+                }
+                
+                token_response = self.session.request(
+                    "post",
+                    token_url,
+                    headers=headers,
+                    data=data,
+                    timeout=self.config.timeout
+                )
+                
+                token_response.raise_for_status()
+                token_data = token_response.json()
+                
+                if "token" not in token_data:
+                    raise AuthenticationError("Invalid token response from server")
+                    
+                # Set authorization header for future API calls
+                self.session.headers['Authorization'] = f'Bearer {token_data["token"]}'
+                logger.debug("Successfully obtained authentication token")
+            else:
+                # Server might not require authentication or returned unexpected response
+                raise AuthenticationError(f"Unexpected response from API: {response.status_code}")
+                
         except requests.exceptions.RequestException as e:
             raise AuthenticationError(f"Failed to obtain authentication token: {str(e)}")
         
@@ -863,25 +909,68 @@ class AsyncManicTimeClient:
             logger.warning("NTLM auth is not fully supported in AsyncManicTimeClient")
         
     async def _get_token(self):
-        """Get authentication token using username/password"""
-        url = f"{self.config.server_url}/api/token"
+        """Get authentication token using username/password following OAuth 2.0 Resource Owner Password Flow"""
         try:
-            async with self.session.post(
-                url,
-                json={
-                    "username": self.config.username,
-                    "password": self.config.password
-                },
+            # Step 1: Get token endpoint URL by making an unauthenticated request to API
+            api_url = f"{self.config.server_url}/api"
+            logger.debug(f"Fetching token endpoint from {api_url}")
+            
+            headers = {
+                "Accept": "application/vnd.manictime.v3+json"
+            }
+            
+            async with self.session.get(
+                api_url,
+                headers=headers,
                 timeout=self.config.timeout
             ) as response:
-                response.raise_for_status()
-                token_data = await response.json()
-                
-                if "access_token" not in token_data:
-                    raise AuthenticationError("Invalid token response from server")
+                # We expect a 401 response with the token endpoint in the JSON body
+                if response.status == 401 and response.content_type.startswith('application/'):
+                    token_endpoint_info = await response.json()
+                    token_url = None
                     
-                self.session.headers['Authorization'] = f'Bearer {token_data["access_token"]}'
-                logger.debug("Successfully obtained authentication token")
+                    # Look for the token endpoint in the links
+                    for link in token_endpoint_info.get('links', []):
+                        if link.get('rel') == 'manictime/token':
+                            token_url = link.get('href')
+                            break
+                            
+                    if not token_url:
+                        raise AuthenticationError("Could not find token endpoint URL in API response")
+                        
+                    logger.debug(f"Found token endpoint URL: {token_url}")
+                    
+                    # Step 2: Get access token from token endpoint
+                    token_headers = {
+                        "Content-Type": "application/x-www-form-urlencoded",
+                        "Accept": "application/vnd.manictime.v3+json"
+                    }
+                    
+                    data = {
+                        "grant_type": "password",
+                        "username": self.config.username,
+                        "password": self.config.password
+                    }
+                    
+                    async with self.session.post(
+                        token_url,
+                        headers=token_headers,
+                        data=data,
+                        timeout=self.config.timeout
+                    ) as token_response:
+                        token_response.raise_for_status()
+                        token_data = await token_response.json()
+                        
+                        if "token" not in token_data:
+                            raise AuthenticationError("Invalid token response from server")
+                            
+                        # Set authorization header for future API calls
+                        self.session.headers['Authorization'] = f'Bearer {token_data["token"]}'
+                        logger.debug("Successfully obtained authentication token")
+                else:
+                    # Server might not require authentication or returned unexpected response
+                    raise AuthenticationError(f"Unexpected response from API: {response.status}")
+                    
         except aiohttp.ClientError as e:
             raise AuthenticationError(f"Failed to obtain authentication token: {str(e)}")
             
