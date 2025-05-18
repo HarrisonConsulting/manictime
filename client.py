@@ -199,7 +199,7 @@ class ManicTimeClient:
             activities_url: Optional direct URL to the activities endpoint
             
         Returns:
-            Response data from activities API
+            Response data from activities API with 'activities' key containing processed activity data
         """
         # Use the provided activities URL if available, otherwise construct it
         if activities_url:
@@ -222,17 +222,99 @@ class ManicTimeClient:
         try:
             result = self._make_request(url, params=params, headers=headers)
             
-            # Log response information to help with debugging
+            # Handle ManicTime API response with 'entities' array 
             if isinstance(result, dict):
-                if 'activities' in result:
-                    activity_count = len(result['activities'])
-                    logger.info(f"Retrieved {activity_count} activities from response")
+                # Extract activities from 'entities' array
+                if 'entities' in result and isinstance(result['entities'], list):
+                    # Filter entities for activities
+                    activities = [
+                        entity for entity in result['entities'] 
+                        if isinstance(entity, dict) and entity.get('entityType') == 'activity'
+                    ]
+                    
+                    # Transform entities to standard activity format
+                    transformed_activities = []
+                    for activity in activities:
+                        values = activity.get('values', {})
+                        if isinstance(values, dict) and 'timeInterval' in values:
+                            time_interval = values.get('timeInterval', {})
+                            start_time = time_interval.get('start', '')
+                            duration_seconds = time_interval.get('duration', 0)
+                            
+                            # Calculate end time from start and duration
+                            end_time = ''
+                            if start_time:
+                                try:
+                                    from dateutil import parser
+                                    from datetime import timedelta
+                                    start_dt = parser.parse(start_time)
+                                    end_dt = start_dt + timedelta(seconds=duration_seconds)
+                                    end_time = end_dt.isoformat()
+                                except Exception as e:
+                                    logger.warning(f"Error calculating end time: {str(e)}")
+                            
+                            # Get activity name/title
+                            name = values.get('name', '')
+                            
+                            # Extract tags from group entities
+                            tags = []
+                            group_list_id = values.get('groupListId')
+                            if group_list_id:
+                                # Find the groupList entity
+                                group_list = next((
+                                    entity for entity in result['entities']
+                                    if entity.get('entityType') == 'groupList' and entity.get('entityId') == group_list_id
+                                ), None)
+                                
+                                if group_list and 'values' in group_list and 'groupIds' in group_list['values']:
+                                    group_ids = group_list['values']['groupIds']
+                                    # Find all group entities with these IDs
+                                    groups = [
+                                        entity for entity in result['entities']
+                                        if entity.get('entityType') == 'group' and entity.get('entityId') in group_ids
+                                    ]
+                                    # Extract names from groups
+                                    for group in groups:
+                                        if 'values' in group and 'name' in group['values']:
+                                            tag_name = group['values']['name']
+                                            if tag_name:
+                                                tags.append(tag_name)
+                            
+                            # Create standardized activity data - ensure ID is present and properly formatted
+                            entity_id = activity.get('entityId')
+                            # Convert entityId to string if it exists, otherwise use empty string
+                            entity_id_str = str(entity_id) if entity_id is not None else ''
+                            
+                            # Log the entityId for debugging
+                            logger.info(f"Processing activity with entityId: {entity_id} (type: {type(entity_id)})")
+                            
+                            activity_data = {
+                                'id': entity_id_str,  # Use string representation as ID
+                                'entityId': entity_id,  # Keep original entityId for reference
+                                'title': name,
+                                'start': start_time,
+                                'end': end_time,
+                                'duration': duration_seconds,
+                                'tags': tags
+                            }
+                            
+                            # Add application field if available
+                            if 'application' in values:
+                                activity_data['application'] = values['application']
+                            
+                            transformed_activities.append(activity_data)
+                    
+                    # Add standardized activities to result
+                    result['activities'] = transformed_activities
+                    logger.info(f"Extracted {len(transformed_activities)} activities from entities")
                 else:
-                    logger.warning(f"Response doesn't contain 'activities' key. Keys: {list(result.keys())}")
-            elif isinstance(result, list):
-                logger.info(f"Retrieved {len(result)} activities (direct list response)")
+                    # No entities found, create empty activities list
+                    logger.warning(f"Response doesn't contain 'entities' array. Keys: {list(result.keys())}")
+                    result['activities'] = []
             else:
+                # Unexpected response type, create empty result
                 logger.warning(f"Unexpected response type: {type(result)}")
+                result = {'activities': []}
                 
             return result
         except Exception as e:
@@ -1497,20 +1579,118 @@ class CachedManicTimeClient(ManicTimeClient):
         
     def get_activities(self, timeline_id: str, 
                       from_time: datetime, to_time: datetime, 
-                      cache: bool = True) -> Dict[str, Any]:
+                      cache: bool = True, 
+                      activities_url: str = None) -> Dict[str, Any]:
         """Get activities for timeline in time range with optional caching"""
         if not cache:
-            return super().get_activities(timeline_id, from_time, to_time, cache=False)
+            # If activities_url is provided, pass it to the parent method
+            if activities_url:
+                return super().get_activities(timeline_id, from_time, to_time, cache=False, activities_url=activities_url)
+            else:
+                return super().get_activities(timeline_id, from_time, to_time, cache=False)
             
         cache_key = self._get_cache_key("get_activities", timeline_id, from_time, to_time)
+        if activities_url:
+            # If a custom URL is provided, include it in the cache key
+            cache_key += f"_{hash(activities_url)}"
+            
         cached = self._get_from_cache(cache_key)
         
         if cached is not None:
             return cached
+        
+        # Call parent method with or without activities_url    
+        if activities_url:
+            result = super().get_activities(timeline_id, from_time, to_time, cache=False, activities_url=activities_url)
+        else:
+            result = super().get_activities(timeline_id, from_time, to_time, cache=False)
             
-        result = super().get_activities(timeline_id, from_time, to_time, cache=False)
         self._store_in_cache(cache_key, result)
         return result
+        
+    def get_activities_for_date_range(self, 
+                                    timeline_id: str,
+                                    start_date: datetime,
+                                    end_date: datetime,
+                                    batch_size: timedelta = timedelta(days=7),
+                                    activities_url: str = None) -> List[Activity]:
+        """
+        Get all activities between two dates, handling pagination
+        
+        Args:
+            timeline_id: The timeline to query
+            start_date: Start date (inclusive)
+            end_date: End date (inclusive) 
+            batch_size: How much data to request at once (default 7 days)
+            activities_url: Optional direct URL to the activities endpoint
+        
+        Returns:
+            List of Activity objects
+        """
+        all_activities = []
+        current_start = start_date
+        
+        while current_start <= end_date:
+            current_end = min(current_start + batch_size, end_date)
+            
+            logger.info(f"Fetching activities from {current_start} to {current_end}")
+            
+            # Use the activities_url parameter when calling get_activities
+            batch = self.get_activities(
+                timeline_id,
+                current_start,
+                current_end,
+                activities_url=activities_url
+            )
+            
+            # Log the batch structure for debugging
+            logger.info(f"Activity batch type: {type(batch)}")
+            if isinstance(batch, dict):
+                logger.info(f"Activity batch keys: {list(batch.keys())}")
+            
+            # Handle the case where batch might not be a dictionary
+            if not isinstance(batch, dict):
+                logger.warning(f"Unexpected format in activities response: {type(batch)}")
+                activities = []
+            else:
+                # Safely extract activities from the response
+                activity_data = batch.get("activities", [])
+                logger.info(f"Found {len(activity_data)} activities in batch")
+                
+                if not isinstance(activity_data, list):
+                    logger.warning(f"Activities field is not a list: {type(activity_data)}")
+                    activities = []
+                else:
+                    activities = []
+                    for i, a in enumerate(activity_data):
+                        try:
+                            # Log every 100th activity for debugging, to avoid too much logging
+                            if i % 100 == 0:
+                                logger.info(f"Processing activity {i} with data: {a}")
+                            
+                            activity = Activity.from_dict(a)
+                            
+                            # Verify ID is present
+                            if hasattr(activity, 'id') and activity.id:
+                                activities.append(activity)
+                                # Log every 100th created activity
+                                if i % 100 == 0:
+                                    logger.info(f"Created activity {i} with ID: {activity.id}")
+                            else:
+                                logger.warning(f"Skipping activity {i} because ID is missing")
+                                
+                        except Exception as e:
+                            logger.error(f"Failed to parse activity: {str(e)}")
+                            # Continue with other activities
+                            
+            all_activities.extend(activities)
+            
+            logger.info(f"Retrieved {len(activities)} activities in this batch")
+            
+            current_start = current_end + timedelta(seconds=1)
+            
+        logger.info(f"Total activities retrieved: {len(all_activities)}")
+        return all_activities
 
 
 class ServerAdminClient:

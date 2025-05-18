@@ -31,6 +31,8 @@ class Activity:
     end: datetime
     title: str
     application: str
+    # Add id field with default empty string
+    id: str = ""
     duration: Optional[timedelta] = None
     notes: Optional[str] = None
     tags: List[str] = field(default_factory=list)
@@ -42,14 +44,96 @@ class Activity:
             
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "Activity":
-        """Create Activity from API response dict"""
+        """Create Activity from the standardized activity data format
+        
+        Expected fields in data:
+        - id: Activity unique identifier
+        - start: ISO formatted start time string
+        - end: ISO formatted end time string
+        - title: Activity title/name
+        - application: Application name (optional)
+        - duration: Duration in seconds (optional)
+        - tags: List of tag strings
+        - notes: Activity notes (optional)
+        """
+        # Add detailed logging to diagnose what data is being passed
+        logger.info(f"Activity.from_dict data: {data}")
+        # Log the data keys specifically to see what fields are available
+        if isinstance(data, dict):
+            logger.info(f"Activity data keys: {list(data.keys())}")
+            logger.info(f"Activity ID: {data.get('id', 'MISSING')}")
+            logger.info(f"Activity entityId: {data.get('entityId', 'MISSING')}")
+            
+        if not isinstance(data, dict):
+            logger.warning(f"Activity.from_dict received non-dict data: {type(data)}")
+            # Return an empty activity with placeholder values to avoid errors
+            return cls(
+                start=datetime.now(),
+                end=datetime.now(),
+                title="Invalid Data",
+                application="",
+                notes="",
+                tags=[]
+            )
+        
+        # Parse start time from ISO format
+        start_str = data.get("start", "")
+        try:
+            from dateutil import parser
+            start_time = parser.parse(start_str)
+        except Exception as e:
+            logger.warning(f"Failed to parse start time '{start_str}': {str(e)}")
+            start_time = datetime.now()
+        
+        # Parse end time from ISO format
+        end_str = data.get("end", "")
+        try:
+            from dateutil import parser
+            end_time = parser.parse(end_str)
+        except Exception as e:
+            logger.warning(f"Failed to parse end time '{end_str}': {str(e)}")
+            # Calculate from duration or use default
+            duration_seconds = data.get("duration", 0)
+            if duration_seconds:
+                end_time = start_time + timedelta(seconds=duration_seconds)
+            else:
+                end_time = start_time + timedelta(minutes=1)  # Default duration
+        
+        # Get basic fields
+        title = data.get("title", "")
+        application = data.get("application", "")
+        notes = data.get("notes", "")
+        
+        # Get tags (always as a list)
+        tags = data.get("tags", [])
+        if not isinstance(tags, list):
+            tags = [tags] if tags else []
+        
+        # Get ID field - critical for activity identification
+        activity_id = data.get("id", "")
+        entity_id = data.get("entityId")
+        
+        # If ID is not present or empty, try to use entityId
+        if not activity_id and entity_id is not None:
+            activity_id = str(entity_id)
+            
+        # Log the ID for debugging
+        logger.info(f"Creating Activity with id: '{activity_id}', entityId: {entity_id}")
+        
+        # Ensure ID is not None or empty
+        if not activity_id:
+            logger.warning(f"Activity has no ID or entityId, creating a random ID")
+            import uuid
+            activity_id = f"generated_{uuid.uuid4()}"
+            
         return cls(
-            start=datetime.fromisoformat(data["start"]),
-            end=datetime.fromisoformat(data["end"]),
-            title=data.get("title", ""),
-            application=data.get("application", ""),
-            notes=data.get("notes"),
-            tags=data.get("tags", [])
+            id=activity_id,  # Include ID field
+            start=start_time,
+            end=end_time,
+            title=title,
+            application=application,
+            notes=notes,
+            tags=tags
         )
 
 @dataclass
