@@ -11,7 +11,7 @@ import textwrap
 
 from . import __version__
 from .client import ManicTimeClient
-from .config import Config
+from .configuration import Config
 from .oauth import OAuthClient
 from .webhook import WebhookManager
 

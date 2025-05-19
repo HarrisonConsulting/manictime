@@ -11,7 +11,7 @@ from unittest.mock import patch, MagicMock
 
 # Add the parent directory to the path so we can import the modules
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from config import Config
+from configuration import Config
 
 # Create a clean Config class for testing that doesn't depend on environment
 @pytest.fixture

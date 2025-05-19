@@ -5,7 +5,7 @@ from models import Activity
 
 def test_config_validation():
     """Test that config validation raises an error with invalid config."""
-    from config import Config
+    from configuration import Config
     config = Config()
     config.server_url = None
     with pytest.raises(ValueError):
@@ -14,7 +14,7 @@ def test_config_validation():
 def test_client_initialization():
     """Test that client initializes with correct authorization header."""
     from client import ManicTimeClient
-    from config import Config
+    from configuration import Config
     config = Config()
     config.server_url = "http://localhost:8080"
     config.auth_type = "bearer"

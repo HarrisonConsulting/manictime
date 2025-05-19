@@ -1,6 +1,6 @@
 from .models import Timeline, Activity, TagCombination
 from .client import ManicTimeClient
-from .config import Config
+from .configuration import Config
 from .exceptions import ManicTimeClientError, AuthenticationError, NotFoundError
 
 __all__ = [

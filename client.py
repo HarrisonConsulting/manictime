@@ -13,7 +13,7 @@ import aiohttp
 import pandas as pd
 from io import StringIO, BytesIO
 
-from config import Config
+from configuration import Config
 from exceptions import ManicTimeClientError, AuthenticationError, NotFoundError
 from models import Activity, Timeline, TagCombination
 
