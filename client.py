@@ -295,7 +295,8 @@ class ManicTimeClient:
                                 'start': start_time,
                                 'end': end_time,
                                 'duration': duration_seconds,
-                                'tags': tags
+                                'tags': tags,
+                                'groupId': values.get('groupId'),  # Add this line
                             }
                             
                             # Add application field if available

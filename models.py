@@ -36,6 +36,7 @@ class Activity:
     duration: Optional[timedelta] = None
     notes: Optional[str] = None
     tags: List[str] = field(default_factory=list)
+    groupId: Optional[int] = None
     
     def __post_init__(self):
         """Calculate duration after initialization"""
@@ -55,6 +56,7 @@ class Activity:
         - duration: Duration in seconds (optional)
         - tags: List of tag strings
         - notes: Activity notes (optional)
+        - groupId: Group ID (optional)
         """
         # Add detailed logging to diagnose what data is being passed
         logger.info(f"Activity.from_dict data: {data}")
@@ -125,6 +127,15 @@ class Activity:
             logger.warning(f"Activity has no ID or entityId, creating a random ID")
             import uuid
             activity_id = f"generated_{uuid.uuid4()}"
+        
+        # Get groupId
+        group_id = data.get("groupId")
+        if group_id is not None:
+            try:
+                group_id = int(group_id)
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid groupId value: {group_id}")
+                group_id = None
             
         return cls(
             id=activity_id,  # Include ID field
@@ -133,7 +144,8 @@ class Activity:
             title=title,
             application=application,
             notes=notes,
-            tags=tags
+            tags=tags,
+            groupId=group_id
         )
 
 @dataclass
