@@ -348,11 +348,11 @@ class ManicTimeClient:
         # Extract timelines array from response
         if isinstance(response, dict) and 'timelines' in response:
             timelines = response['timelines']
-            logger.info(f"Retrieved {len(timelines)} timelines")
+            logger.debug(f"Retrieved {len(timelines)} timelines")
             return timelines
         elif isinstance(response, list):
             # Response is already a list
-            logger.info(f"Retrieved {len(response)} timelines")
+            logger.debug(f"Retrieved {len(response)} timelines")
             return response
         else:
             logger.warning(f"Unexpected timelines response format: {type(response)}")
@@ -390,7 +390,7 @@ class ManicTimeClient:
                     'device': timeline.get('deviceDisplayName', 'Unknown Device')
                 })
         
-        logger.info(f"Discovered {len(users)} unique users from {len(timelines)} timelines")
+        logger.debug(f"Discovered {len(users)} unique users from {len(timelines)} timelines")
         return users
 
     def get_tag_combinations(self, include_all_users: bool = False) -> List[Dict[str, Any]]:
