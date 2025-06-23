@@ -13,9 +13,9 @@ import aiohttp
 import pandas as pd
 from io import StringIO, BytesIO
 
-from configuration import Config
-from exceptions import ManicTimeClientError, AuthenticationError, NotFoundError
-from models import Activity, Timeline, TagCombination
+from .configuration import Config
+from .exceptions import ManicTimeClientError, AuthenticationError, NotFoundError
+from .models import Activity, Timeline, TagCombination
 
 logger = logging.getLogger("manictime.client")
 
@@ -169,7 +169,23 @@ class ManicTimeClient:
                 timeout=self.config.timeout
             )
             response.raise_for_status()
-            return response.json() if response.text else None
+            
+            # Check if we got JSON response
+            content_type = response.headers.get('content-type', '')
+            if 'application/json' in content_type or 'application/vnd.manictime' in content_type:
+                return response.json() if response.text else None
+            else:
+                # If we got HTML, it's likely a login page
+                if 'text/html' in content_type:
+                    logger.error(f"Got HTML response instead of JSON from {url}. This usually means authentication failed.")
+                    raise AuthenticationError("Authentication required - received HTML instead of JSON")
+                else:
+                    logger.warning(f"Unexpected content type: {content_type}")
+                    # Try to parse as JSON anyway
+                    try:
+                        return response.json() if response.text else None
+                    except:
+                        raise ManicTimeClientError(f"Invalid response format from {url}. Expected JSON, got {content_type}")
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 401:
                 raise AuthenticationError("Authentication failed")
@@ -328,8 +344,54 @@ class ManicTimeClient:
         """
         url = f"{self.config.server_url}/api/timelines"
         response = self._make_request(url, "GET")
-        logger.info(f"Retrieved {len(response)} timelines")
-        return response
+        
+        # Extract timelines array from response
+        if isinstance(response, dict) and 'timelines' in response:
+            timelines = response['timelines']
+            logger.info(f"Retrieved {len(timelines)} timelines")
+            return timelines
+        elif isinstance(response, list):
+            # Response is already a list
+            logger.info(f"Retrieved {len(response)} timelines")
+            return response
+        else:
+            logger.warning(f"Unexpected timelines response format: {type(response)}")
+            return []
+    
+    def discover_users_from_timelines(self) -> Dict[str, Dict[str, Any]]:
+        """
+        Discover unique users from timeline data
+        
+        Returns:
+            Dictionary mapping username to user info including display name and timeline count
+        """
+        timelines = self.get_timelines()
+        users = {}
+        
+        for timeline in timelines:
+            # Extract owner information from timeline
+            owner = timeline.get('owner', {})
+            # ManicTime API uses 'username' field, not 'name'
+            username = owner.get('username') or owner.get('name')
+            
+            if username:
+                if username not in users:
+                    users[username] = {
+                        'username': username,
+                        'display_name': owner.get('displayName', username),
+                        'email': owner.get('email', ''),  # May not be present
+                        'timeline_count': 0,
+                        'timelines': []
+                    }
+                
+                users[username]['timeline_count'] += 1
+                users[username]['timelines'].append({
+                    'key': timeline.get('timelineKey'),
+                    'device': timeline.get('deviceDisplayName', 'Unknown Device')
+                })
+        
+        logger.info(f"Discovered {len(users)} unique users from {len(timelines)} timelines")
+        return users
 
     def get_tag_combinations(self, include_all_users: bool = False) -> List[Dict[str, Any]]:
         """
