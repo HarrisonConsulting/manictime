@@ -220,10 +220,10 @@ class ManicTimeClient:
         # Use the provided activities URL if available, otherwise construct it
         if activities_url:
             url = activities_url
-            logger.info(f"Using provided activities URL: {url}")
+            logger.debug(f"Using provided activities URL: {url}")
         else:
             url = f"{self.config.server_url}/api/timelines/{timeline_id}/activities"
-            logger.info(f"Using default constructed activities URL: {url}")
+            logger.debug(f"Using default constructed activities URL: {url}")
             
         # Format parameters for the request
         params = {
@@ -233,7 +233,7 @@ class ManicTimeClient:
         
         # Add v3 API header to ensure proper response format
         headers = {"Accept": "application/vnd.manictime.v3+json"}
-        logger.info(f"Requesting activities for timeline {timeline_id} from {from_time} to {to_time}")
+        logger.debug(f"Requesting activities for timeline {timeline_id} from {from_time} to {to_time}")
         
         try:
             result = self._make_request(url, params=params, headers=headers)
@@ -302,7 +302,7 @@ class ManicTimeClient:
                             entity_id_str = str(entity_id) if entity_id is not None else ''
                             
                             # Log the entityId for debugging
-                            logger.info(f"Processing activity with entityId: {entity_id} (type: {type(entity_id)})")
+                            logger.debug(f"Processing activity with entityId: {entity_id} (type: {type(entity_id)})")
                             
                             activity_data = {
                                 'id': entity_id_str,  # Use string representation as ID
@@ -323,7 +323,7 @@ class ManicTimeClient:
                     
                     # Add standardized activities to result
                     result['activities'] = transformed_activities
-                    logger.info(f"Extracted {len(transformed_activities)} activities from entities")
+                    logger.debug(f"Extracted {len(transformed_activities)} activities from entities")
                 else:
                     # No entities found, create empty activities list
                     logger.warning(f"Response doesn't contain 'entities' array. Keys: {list(result.keys())}")
@@ -406,18 +406,18 @@ class ManicTimeClient:
         if include_all_users:
             # Admin endpoint to get tags for all users
             url = f"{self.config.server_url}/api/tagcombinationlist?getAll=true"
-            logger.info("Fetching tag combinations for all users (admin endpoint)")
+            logger.debug("Fetching tag combinations for all users (admin endpoint)")
         else:
             # Standard endpoint for current user's tags
             url = f"{self.config.server_url}/api/tagcombinationlist"
-            logger.info("Fetching tag combinations for current user")
+            logger.debug("Fetching tag combinations for current user")
             
         # Add appropriate accept header for v3 API
         headers = {"Accept": "application/vnd.manictime.v3+json"}
         
         try:
             response = self._make_request(url, "GET", headers=headers)
-            logger.info(f"Retrieved {len(response)} tag combinations")
+            logger.debug(f"Retrieved {len(response)} tag combinations")
             return response
         except ManicTimeClientError as e:
             # If the admin endpoint fails, fall back to the standard endpoint
@@ -452,7 +452,7 @@ class ManicTimeClient:
         while current_start <= end_date:
             current_end = min(current_start + batch_size, end_date)
             
-            logger.info(f"Fetching activities from {current_start} to {current_end}")
+            logger.debug(f"Fetching activities from {current_start} to {current_end}")
             
             batch = self.get_activities(
                 timeline_id,
@@ -505,7 +505,7 @@ class ManicTimeClient:
         
         for timeline in timelines:
             timeline_id = timeline["timelineId"]
-            logger.info(f"Fetching activities for timeline {timeline_id}")
+            logger.debug(f"Fetching activities for timeline {timeline_id}")
             
             try:
                 activities = self.get_activities_for_date_range(
@@ -1263,14 +1263,14 @@ class AsyncManicTimeClient:
         """Get list of timelines"""
         url = f"{self.config.server_url}/api/timelines"
         response = await self._make_request(url, "GET")
-        logger.info(f"Retrieved {len(response)} timelines")
+        logger.debug(f"Retrieved {len(response)} timelines")
         return response
     
     async def get_tag_combinations(self) -> List[Dict[str, Any]]:
         """Get list of tag combinations"""
         url = f"{self.config.server_url}/api/tags"
         response = await self._make_request(url, "GET")
-        logger.info(f"Retrieved {len(response)} tag combinations")
+        logger.debug(f"Retrieved {len(response)} tag combinations")
         return response
         
     async def get_activities(self, timeline_id: str, 
@@ -1306,7 +1306,7 @@ class AsyncManicTimeClient:
         while current_start <= end_date:
             current_end = min(current_start + batch_size, end_date)
             
-            logger.info(f"Fetching activities from {current_start} to {current_end}")
+            logger.debug(f"Fetching activities from {current_start} to {current_end}")
             
             batch = await self.get_activities(
                 timeline_id,
@@ -1341,7 +1341,7 @@ class AsyncManicTimeClient:
         
         for timeline in timelines:
             timeline_id = timeline["timelineId"]
-            logger.info(f"Fetching activities for timeline {timeline_id}")
+            logger.debug(f"Fetching activities for timeline {timeline_id}")
             
             try:
                 activities = await self.get_activities_for_date_range(
@@ -1696,7 +1696,7 @@ class CachedManicTimeClient(ManicTimeClient):
         while current_start <= end_date:
             current_end = min(current_start + batch_size, end_date)
             
-            logger.info(f"Fetching activities from {current_start} to {current_end}")
+            logger.debug(f"Fetching activities from {current_start} to {current_end}")
             
             # Use the activities_url parameter when calling get_activities
             batch = self.get_activities(
@@ -1707,9 +1707,9 @@ class CachedManicTimeClient(ManicTimeClient):
             )
             
             # Log the batch structure for debugging
-            logger.info(f"Activity batch type: {type(batch)}")
+            logger.debug(f"Activity batch type: {type(batch)}")
             if isinstance(batch, dict):
-                logger.info(f"Activity batch keys: {list(batch.keys())}")
+                logger.debug(f"Activity batch keys: {list(batch.keys())}")
             
             # Handle the case where batch might not be a dictionary
             if not isinstance(batch, dict):
@@ -1718,7 +1718,7 @@ class CachedManicTimeClient(ManicTimeClient):
             else:
                 # Safely extract activities from the response
                 activity_data = batch.get("activities", [])
-                logger.info(f"Found {len(activity_data)} activities in batch")
+                logger.debug(f"Found {len(activity_data)} activities in batch")
                 
                 if not isinstance(activity_data, list):
                     logger.warning(f"Activities field is not a list: {type(activity_data)}")
@@ -1729,7 +1729,7 @@ class CachedManicTimeClient(ManicTimeClient):
                         try:
                             # Log every 100th activity for debugging, to avoid too much logging
                             if i % 100 == 0:
-                                logger.info(f"Processing activity {i} with data: {a}")
+                                logger.debug(f"Processing activity {i} with data: {a}")
                             
                             activity = Activity.from_dict(a)
                             
@@ -1738,7 +1738,7 @@ class CachedManicTimeClient(ManicTimeClient):
                                 activities.append(activity)
                                 # Log every 100th created activity
                                 if i % 100 == 0:
-                                    logger.info(f"Created activity {i} with ID: {activity.id}")
+                                    logger.debug(f"Created activity {i} with ID: {activity.id}")
                             else:
                                 logger.warning(f"Skipping activity {i} because ID is missing")
                                 
@@ -1748,11 +1748,11 @@ class CachedManicTimeClient(ManicTimeClient):
                             
             all_activities.extend(activities)
             
-            logger.info(f"Retrieved {len(activities)} activities in this batch")
+            logger.debug(f"Retrieved {len(activities)} activities in this batch")
             
             current_start = current_end + timedelta(seconds=1)
             
-        logger.info(f"Total activities retrieved: {len(all_activities)}")
+        logger.debug(f"Total activities retrieved: {len(all_activities)}")
         return all_activities
 
 
