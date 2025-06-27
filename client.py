@@ -244,11 +244,15 @@ class ManicTimeClient:
                 if 'entities' in result and isinstance(result['entities'], list):
                     # First, build a lookup for groups by their entityId
                     groups_lookup = {}
+                    group_count = 0
                     for entity in result['entities']:
                         if isinstance(entity, dict) and entity.get('entityType') == 'group':
+                            group_count += 1
                             group_id = entity.get('entityId')
                             if group_id and 'values' in entity:
                                 groups_lookup[group_id] = entity['values'].get('name', '')
+                    
+                    logger.debug(f"Found {group_count} groups in response, lookup has {len(groups_lookup)} entries")
                     
                     # Filter entities for activities
                     activities = [
@@ -317,6 +321,9 @@ class ManicTimeClient:
                             application_name = ''
                             if group_id and group_id in groups_lookup:
                                 application_name = groups_lookup[group_id]
+                                logger.debug(f"Found application '{application_name}' for groupId {group_id}")
+                            elif group_id:
+                                logger.debug(f"No group found for groupId {group_id} in lookup of {len(groups_lookup)} groups")
                             
                             activity_data = {
                                 'id': entity_id_str,  # Use string representation as ID
