@@ -242,6 +242,14 @@ class ManicTimeClient:
             if isinstance(result, dict):
                 # Extract activities from 'entities' array
                 if 'entities' in result and isinstance(result['entities'], list):
+                    # First, build a lookup for groups by their entityId
+                    groups_lookup = {}
+                    for entity in result['entities']:
+                        if isinstance(entity, dict) and entity.get('entityType') == 'group':
+                            group_id = entity.get('entityId')
+                            if group_id and 'values' in entity:
+                                groups_lookup[group_id] = entity['values'].get('name', '')
+                    
                     # Filter entities for activities
                     activities = [
                         entity for entity in result['entities'] 
@@ -304,6 +312,12 @@ class ManicTimeClient:
                             # Log the entityId for debugging
                             logger.debug(f"Processing activity with entityId: {entity_id} (type: {type(entity_id)})")
                             
+                            # Look up application name from groupId
+                            group_id = values.get('groupId')
+                            application_name = ''
+                            if group_id and group_id in groups_lookup:
+                                application_name = groups_lookup[group_id]
+                            
                             activity_data = {
                                 'id': entity_id_str,  # Use string representation as ID
                                 'entityId': entity_id,  # Keep original entityId for reference
@@ -312,12 +326,9 @@ class ManicTimeClient:
                                 'end': end_time,
                                 'duration': duration_seconds,
                                 'tags': tags,
-                                'groupId': values.get('groupId'),  # Add this line
+                                'groupId': group_id,
+                                'application': application_name,  # Add resolved application name
                             }
-                            
-                            # Add application field if available
-                            if 'application' in values:
-                                activity_data['application'] = values['application']
                             
                             transformed_activities.append(activity_data)
                     
