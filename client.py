@@ -29,17 +29,51 @@ class ManicTimeClient:
         logger.debug("ManicTimeClient initialized with config: %s", self.config.server_url)
         
     def _create_session(self) -> requests.Session:
-        """Create and configure requests session with retries"""
+        """Create and configure requests session with retries and proper timeouts"""
         session = requests.Session()
+        
+        # Configure adapter with connection pooling and retries
         retry = Retry(
             total=3,
             backoff_factor=0.5,
-            status_forcelist=[500, 502, 503, 504]
+            status_forcelist=[500, 502, 503, 504],
+            allowed_methods=["GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS"]
         )
-        adapter = HTTPAdapter(max_retries=retry)
+        
+        # Create adapter with connection pool settings
+        adapter = HTTPAdapter(
+            max_retries=retry,
+            pool_connections=10,
+            pool_maxsize=10,
+            pool_block=False  # Don't block waiting for connection from pool
+        )
+        
         session.mount('http://', adapter)
         session.mount('https://', adapter)
+        
+        # Wrap the session's request method to ensure proper timeout handling
+        original_request = session.request
+        session.request = self._create_timeout_wrapper(original_request)
+        
         return session
+    
+    def _create_timeout_wrapper(self, original_request):
+        """Create a wrapper that ensures proper timeout for all requests"""
+        def request_with_timeout(*args, **kwargs):
+            # Ensure timeout is always set as tuple (connect_timeout, read_timeout)
+            if 'timeout' not in kwargs or kwargs['timeout'] is None:
+                # Default: 10s for connection, config timeout for read
+                kwargs['timeout'] = (10, self.config.timeout)
+            elif isinstance(kwargs['timeout'], (int, float)):
+                # Convert single timeout to tuple: use 10s for connection
+                kwargs['timeout'] = (10, kwargs['timeout'])
+            
+            # Log the timeout being used
+            logger.debug(f"Making request with timeout: {kwargs.get('timeout')}")
+            
+            return original_request(*args, **kwargs)
+        
+        return request_with_timeout
         
     def _setup_authentication(self):
         """Configure authentication based on config"""
@@ -80,12 +114,14 @@ class ManicTimeClient:
                     "password": self.config.password
                 }
                 
+                # Make token request with explicit connection timeout
+                logger.debug(f"Requesting token with timeout: (10, {self.config.timeout})")
                 token_response = self.session.request(
                     "post",
                     token_url,
                     headers=headers,
                     data=data,  # requests will handle URL encoding automatically
-                    timeout=self.config.timeout
+                    timeout=(10, self.config.timeout)  # (connect, read) timeouts
                 )
                 
                 logger.debug(f"Token request response status: {token_response.status_code}")
@@ -135,7 +171,7 @@ class ManicTimeClient:
                     "get",
                     api_url,
                     headers=headers,
-                    timeout=self.config.timeout
+                    timeout=(10, self.config.timeout)  # (connect, read) timeouts
                 )
                 
                 response.raise_for_status()
@@ -166,7 +202,7 @@ class ManicTimeClient:
                 json=data,
                 params=params,
                 headers=request_headers,
-                timeout=self.config.timeout
+                timeout=(10, self.config.timeout)  # (connect, read) timeouts
             )
             response.raise_for_status()
             
